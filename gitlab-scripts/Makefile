@@ -2,57 +2,63 @@
 
 # Variables
 PYTHON := python3
-SCRIPT := gitlab_batch_update.py  # Replace with your actual script name
-VENV := venv
-# ACTIVATE := source $(VENV)/bin/activate
+PIP := pip3
+SCRIPT ?= gitlab_batch_update.py  # Default script name; can be overridden
+ARGS ?=                            # Default to empty; can be overridden
 
 # Default target
 .PHONY: all
 all: help
 
-# Create a virtual environment
-.PHONY: venv
-venv:
-	@echo "Creating virtual environment..."
-	$(PYTHON) -m venv $(VENV)
-	@echo "Virtual environment created at .$(VENV)/"
-
 # Install dependencies
 .PHONY: install
-install: venv
-	@echo "Activating virtual environment and installing dependencies..."
-	$(ACTIVATE) && \
-	pip install --upgrade pip && \
-	pip install -r requirements.txt
+install:
+	@echo "Installing dependencies..."
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
 
 # Run the script
 .PHONY: run
-run:
-	@echo "Running the script..."
-	$(PYTHON) $(SCRIPT)
+run: install
+	@echo "Running the script: $(SCRIPT) with arguments: $(ARGS)"
+	@if [ -f $(SCRIPT) ]; then \
+		$(PYTHON) $(SCRIPT) $(ARGS); \
+	else \
+		echo "Error: Script $(SCRIPT) does not exist."; \
+		exit 1; \
+	fi
 
 # Run the script with environment variables loaded from .env
 .PHONY: run-env
 run-env: install
-	@echo "Running the script with environment variables from .env..."
-	$(ACTIVATE) && \
-	$(PYTHON) $(SCRIPT)
+	@echo "Running the script with environment variables from .env: $(SCRIPT) with arguments: $(ARGS)"
+	@if [ -f $(SCRIPT) ]; then \
+		$(PYTHON) $(SCRIPT) $(ARGS); \
+	else \
+		echo "Error: Script $(SCRIPT) does not exist."; \
+		exit 1; \
+	fi
 
-# Clean up virtual environment and temporary files
+# Clean up temporary files
 .PHONY: clean
 clean:
 	@echo "Cleaning up..."
-	@rm -rf $(VENV) __pycache__ *.pyc script.log summary_report.txt
+	@rm -rf __pycache__ *.pyc script.log summary_report.txt
 	@echo "Cleanup completed."
+
+# List available Python scripts
+.PHONY: list-scripts
+list-scripts:
+	@echo "Available Python scripts:"
+	@ls *.py
 
 # Display help
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  make venv          - Create a Python virtual environment"
 	@echo "  make install       - Install Python dependencies"
-	@echo "  make run           - Run the script"
-	@echo "  make run-env       - Run the script with .env variables"
-	@echo "  make clean         - Remove virtual environment and temporary files"
+	@echo "  make run [SCRIPT=your_script.py] [ARGS='your arguments']           - Run the specified script with optional arguments (default: $(SCRIPT))"
+	@echo "  make run-env [SCRIPT=your_script.py] [ARGS='your arguments']       - Run the script with .env variables and optional arguments (default: $(SCRIPT))"
+	@echo "  make clean         - Remove temporary files"
+	@echo "  make list-scripts  - List available Python scripts"
 	@echo "  make help          - Display this help message"
-
