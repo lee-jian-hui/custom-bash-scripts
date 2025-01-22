@@ -1,3 +1,14 @@
+"""
+
+__author__ = "Jian Hui Lee"
+example usage:
+
+make run SCRIPT=stop_pipeline_runs.py ARGS="--all"
+make run SCRIPT=stop_pipeline_runs.py ARGS="-b 1"
+make run SCRIPT=stop_pipeline_runs.py ARGS="-a 1"
+"""
+
+
 import gitlab
 import os
 import logging
@@ -22,7 +33,6 @@ load_dotenv()
 # Configuration
 GITLAB_URL = os.getenv("GITLAB_URL")
 PRIVATE_TOKEN = os.getenv("PRIVATE_TOKEN")
-DEFAULT_TIMEFRAME = os.getenv("DEFAULT_TIMEFRAME")  # Default timeframe in days
 REPOS_FILE = os.getenv("REPOS_FILE", "repositories.txt")
 
 # Validate environment variables
@@ -41,16 +51,27 @@ if not os.path.isfile(REPOS_FILE):
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Stop GitLab pipelines running within a specified timeframe."
+        description="Stop GitLab pipelines based on a specified time condition."
     )
-    parser.add_argument(
-        "-t",
-        "--timeframe",
-        type=int,
-        help="Timeframe in days to consider pipelines for stopping. If not provided, value from .env will be used or user will be prompted."
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "-a",
+        "--after",
+        type=str,
+        help="Stop pipelines created after the specified time (ISO format: YYYY-MM-DDTHH:MM:SS)."
     )
-    parser.add_argument(
+    group.add_argument(
         "-b",
+        "--before",
+        type=str,
+        help="Stop pipelines created between NOW and the specified time (ISO format: YYYY-MM-DDTHH:MM:SS)."
+    )
+    group.add_argument(
+        "--all",
+        action="store_true",
+        help="Stop all pipelines in the repository, ignoring the time filters."
+    )
+    parser.add_argument(
         "--branch-name-filter",
         type=str,
         nargs='*',
@@ -63,23 +84,6 @@ def parse_arguments():
         help="Enable verbose output to list all stopped pipelines for each repository."
     )
     return parser.parse_args()
-
-def get_timeframe_from_input_or_env(args_timeframe):
-    if args_timeframe is not None:
-        logger.info(f"Using timeframe from user input: {args_timeframe} days.")
-        return args_timeframe
-
-    if DEFAULT_TIMEFRAME is not None:
-        logger.info(f"Using default timeframe from environment variables: {DEFAULT_TIMEFRAME} days.")
-        return int(DEFAULT_TIMEFRAME)
-
-    while True:
-        try:
-            user_input = int(input("Enter the timeframe in days to consider pipelines for stopping: "))
-            logger.info(f"Using timeframe from user input: {user_input} days.")
-            return user_input
-        except ValueError:
-            print("Invalid input. Please enter a valid number of days.")
 
 def load_repositories(file_path):
     with open(file_path, "r") as f:
@@ -101,9 +105,29 @@ def initialize_gitlab_client(url, token):
         logger.error(f"Failed to connect or authenticate to GitLab: {e}")
         exit(1)
 
-def stop_pipelines(gl, timeframe, branch_name_filter, repositories):
-    cutoff_time = datetime.utcnow() - timedelta(days=timeframe)
-    logger.info(f"Stopping pipelines created between {cutoff_time} and now.")
+def stop_pipelines(gl, after, before, all_pipelines, branch_name_filter, repositories):
+    logger.info(f"stop_pipelines: after: {after}, before: {before}, branch_name_filter: {branch_name_filter}, repositories: {repositories}")
+    after_iso = None
+    before_iso = None
+
+    # Convert 'after' and 'before' to ISO format
+    if after:
+        try:
+            # Convert relative days to ISO if not already in ISO format
+            after_iso = (datetime.utcnow() - timedelta(days=int(after))).isoformat()
+        except ValueError:
+            # Assume it's already an ISO date string
+            after_iso = datetime.fromisoformat(after).isoformat()
+
+    if before:
+        try:
+            # Convert relative days to ISO if not already in ISO format
+            before_iso = (datetime.utcnow() - timedelta(days=int(before))).isoformat()
+        except ValueError:
+            # Assume it's already an ISO date string
+            before_iso = datetime.fromisoformat(before).isoformat()
+
+    logger.info(f"Stopping pipelines created after: {after_iso}, before: {before_iso}")
 
     stopped_pipelines = {}
 
@@ -112,12 +136,17 @@ def stop_pipelines(gl, timeframe, branch_name_filter, repositories):
 
         try:
             project = gl.projects.get(repo_path)
-            # Fetch pipelines only within the specified timeframe
-            pipelines = project.pipelines.list(
-                updated_after=cutoff_time.isoformat(),
-                updated_before=datetime.utcnow().isoformat(),
-                as_list=True
-            )
+
+            # If --all flag is passed, do not use time filters
+            if all_pipelines:
+                pipelines = project.pipelines.list(as_list=True)
+            else:
+                pipelines = project.pipelines.list(
+                    updated_after=after_iso,
+                    updated_before=before_iso,
+                    as_list=True
+                )
+
             detected_count = 0
             stopped_count = 0
             skipped_count = 0
@@ -181,21 +210,24 @@ def generate_summary(stopped_pipelines, verbose=False):
         total_skipped += data['skipped']
 
     logger.info("SUMMARY")
-    logger.info(f"\n\n")
-    logger.info(f"-=-=-=-=")
     logger.info(f"Total pipelines stopped: {total_stopped}/{total_detected}")
     logger.info(f"Total pipelines skipped: {total_skipped}/{total_detected}")
-    logger.info(f"-=-=-=-=")
-    logger.info(f"\n\n")
+    logger.info("-=-=-=-=-=")
 
 def main():
     args = parse_arguments()
-    timeframe = get_timeframe_from_input_or_env(args.timeframe)
-    branch_name_filter = args.branch_name_filter
+    after = args.after
+    before = args.before
+    all_pipelines = args.all
+
+    # Validate arguments
+    if all_pipelines and (after or before):
+        logger.error("The --all flag cannot be used with --after or --before.")
+        exit(1)
 
     repositories = load_repositories(REPOS_FILE)
     gl = initialize_gitlab_client(GITLAB_URL, PRIVATE_TOKEN)
-    stopped_pipelines = stop_pipelines(gl, timeframe, branch_name_filter, repositories)
+    stopped_pipelines = stop_pipelines(gl, after, before, all_pipelines, args.branch_name_filter, repositories)
     generate_summary(stopped_pipelines, verbose=args.verbose)
 
 if __name__ == "__main__":
