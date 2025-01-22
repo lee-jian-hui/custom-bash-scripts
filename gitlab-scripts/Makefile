@@ -3,8 +3,8 @@
 # Variables
 PYTHON := python3
 PIP := pip3
-SCRIPT ?= gitlab_batch_update.py  # Default script name; can be overridden
-ARGS ?=                            # Default to empty; can be overridden
+SCRIPT ?=  # Default script name; can be overridden
+ARGS ?= # Default to empty; can be overridden
 
 # Default target
 .PHONY: all
@@ -20,7 +20,7 @@ install:
 # Run the script
 .PHONY: run
 run: install
-	@echo "Running the script: $(SCRIPT) with arguments: $(ARGS)"
+	@echo "Script: $(SCRIPT), Args: $(ARGS)"
 	@if [ -f $(SCRIPT) ]; then \
 		$(PYTHON) $(SCRIPT) $(ARGS); \
 	else \
@@ -57,8 +57,8 @@ list-scripts:
 help:
 	@echo "Available targets:"
 	@echo "  make install       - Install Python dependencies"
-	@echo "  make run [SCRIPT=your_script.py] [ARGS='your arguments']           - Run the specified script with optional arguments (default: $(SCRIPT))"
-	@echo "  make run-env [SCRIPT=your_script.py] [ARGS='your arguments']       - Run the script with .env variables and optional arguments (default: $(SCRIPT))"
+	@echo "  make run [SCRIPT=your_script.py ARGS='-b branch']           - Run the specified script with optional arguments (default: $(SCRIPT))"
+	@echo "  make run-env [SCRIPT=your_script.py ARGS='-b branch']       - Run the script with .env variables and optional arguments (default: $(SCRIPT))"
 	@echo "  make clean         - Remove temporary files"
 	@echo "  make list-scripts  - List available Python scripts"
 	@echo "  make help          - Display this help message"
