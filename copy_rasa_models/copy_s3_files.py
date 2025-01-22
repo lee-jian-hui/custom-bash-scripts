@@ -8,7 +8,27 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-ENDPOINT_URL = "https://cloudstorage.onefs.dell.com"
+
+
+ENDPOINT_URL = os.getenv("ENDPOINT_URL")
+BUCKET_NAME = os.getenv("BUCKET_NAME")
+
+
+
+def ping_s3_client(s3_client):
+    """
+    Pings the S3 client by listing buckets to ensure it is configured correctly.
+    """
+    try:
+        response = s3_client.list_buckets()
+        logging.info("Successfully connected to S3. Buckets available:")
+        for bucket in response['Buckets']:
+            logging.info(f"  - {bucket['Name']}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to connect to S3: {e}")
+        return False
+
 
 def copy_rasa_models_s3(env1, env2):
     teams = ["gta", "cti", "database", "general", "server", "digital"]
@@ -21,26 +41,25 @@ def copy_rasa_models_s3(env1, env2):
         endpoint_url=ENDPOINT_URL,
         verify=False  # Disable SSL validation for testing
     )
-
-    bucket_name = "cloudstorage.onefs.dell.com"
-
+    ping_s3_client(s3)
+    
     for team in teams:
-        source_key = f"babblebot/bots/{team}/models/{env2}/default.tar.gz"
-        destination_key = f"babblebot/bots/{team}/models/{env1}/default.tar.gz"
+        source_key = f"bots/{team}/models/{env2}/default.tar.gz"
+        destination_key = f"bots/{team}/models/{env1}/default.tar.gz"
 
         logging.info(f"Attempting to copy model for team '{team}'...")
-        logging.info(f"Source Bucket: {bucket_name}, Source Key: {source_key}")
-        logging.info(f"Destination Bucket: {bucket_name}, Destination Key: {destination_key}")
+        logging.info(f"Source Bucket: {BUCKET_NAME}, Source Key: {source_key}")
+        logging.info(f"Destination Bucket: {BUCKET_NAME}, Destination Key: {destination_key}")
 
         try:
             s3.copy_object(
-                Bucket=bucket_name,
-                CopySource={'Bucket': bucket_name, 'Key': source_key},
+                Bucket=BUCKET_NAME,
+                CopySource={'Bucket': BUCKET_NAME, 'Key': source_key},
                 Key=destination_key
             )
             logging.info(f"Successfully copied model for team '{team}' from {env2} to {env1}.")
         except s3.exceptions.NoSuchBucket:
-            logging.error(f"Bucket '{bucket_name}' does not exist.")
+            logging.error(f"Bucket '{BUCKET_NAME}' does not exist.")
         except s3.exceptions.ClientError as e:
             if e.response['Error']['Code'] == 'AccessDenied':
                 logging.error("Access denied. Please check your AWS credentials and permissions.")
