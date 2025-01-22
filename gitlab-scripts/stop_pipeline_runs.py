@@ -56,6 +56,12 @@ def parse_arguments():
         nargs='*',
         help="List of branch names to filter pipelines. Leave empty to consider all branches."
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output to list all stopped pipelines for each repository."
+    )
     return parser.parse_args()
 
 def get_timeframe_from_input_or_env(args_timeframe):
@@ -115,7 +121,7 @@ def stop_pipelines(gl, timeframe, branch_name_filter, repositories):
             detected_count = 0
             stopped_count = 0
             skipped_count = 0
-            stopped_pipelines[repo_path] = []
+            stopped_pipelines[repo_path] = {"detected": 0, "stopped": 0, "skipped": 0, "pipelines": []}
 
             for pipeline in pipelines:
                 detected_count += 1
@@ -130,7 +136,7 @@ def stop_pipelines(gl, timeframe, branch_name_filter, repositories):
                     try:
                         pipeline.cancel()
                         logger.info(f"Stopped pipeline {pipeline.id} on branch {pipeline.ref}.")
-                        stopped_pipelines[repo_path].append(pipeline)
+                        stopped_pipelines[repo_path]["pipelines"].append(pipeline)
                         stopped_count += 1
                     except Exception as e:
                         logger.error(f"Failed to stop pipeline {pipeline.id}: {e}")
@@ -138,19 +144,16 @@ def stop_pipelines(gl, timeframe, branch_name_filter, repositories):
                     # Skip pipelines that are not eligible for stopping
                     skipped_count += 1
 
-            stopped_pipelines[repo_path] = {
-                "detected": detected_count,
-                "stopped": stopped_count,
-                "skipped": skipped_count
-            }
+            stopped_pipelines[repo_path].update(
+                {"detected": detected_count, "stopped": stopped_count, "skipped": skipped_count}
+            )
 
         except Exception as e:
             logger.error(f"Error fetching pipelines for repository {repo_path}: {e}")
 
     return stopped_pipelines
 
-
-def generate_summary(stopped_pipelines):
+def generate_summary(stopped_pipelines, verbose=False):
     logger.info("REPORT")
     logger.info("-=-=-=-=-=")
 
@@ -163,6 +166,14 @@ def generate_summary(stopped_pipelines):
         logger.info(f"Total pipelines detected: {data['detected']}")
         logger.info(f"Total pipelines stopped: {data['stopped']}")
         logger.info(f"Total pipelines skipped: {data['skipped']}")
+
+        if verbose and data['stopped'] > 0:
+            logger.info(f"Stopped pipelines for {repo}:")
+            for pipeline in data['pipelines']:
+                logger.info(
+                    f"  Pipeline ID: {pipeline.id}, Branch: {pipeline.ref}, URL: {pipeline.web_url}"
+                )
+
         logger.info("-=-=-=-=-=")
 
         total_detected += data['detected']
@@ -185,7 +196,7 @@ def main():
     repositories = load_repositories(REPOS_FILE)
     gl = initialize_gitlab_client(GITLAB_URL, PRIVATE_TOKEN)
     stopped_pipelines = stop_pipelines(gl, timeframe, branch_name_filter, repositories)
-    generate_summary(stopped_pipelines)
+    generate_summary(stopped_pipelines, verbose=args.verbose)
 
 if __name__ == "__main__":
     main()
