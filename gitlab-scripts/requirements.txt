@@ -1,0 +1,4 @@
+--index-url https://dcsartifacts.dell.com/artifactory/api/pypi/python/simple/ --trusted-host dcsartifacts.dell.com
+python-gitlab
+python-git
+python-dotenv

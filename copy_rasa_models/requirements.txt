@@ -1,0 +1,2 @@
+--index-url https://dcsartifacts.dell.com/artifactory/api/pypi/python/simple/ --trusted-host dcsartifacts.dell.com
+boto3
