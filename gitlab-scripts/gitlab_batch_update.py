@@ -11,12 +11,13 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("script.log", mode="a")
+        logging.FileHandler("gitlab_batch_update.log", mode="a")
     ]
 )
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
 # Configuration
 GITLAB_URL = os.getenv("GITLAB_URL")
 PRIVATE_TOKEN = os.getenv("PRIVATE_TOKEN")
@@ -26,7 +27,7 @@ TARGET_FILE = os.getenv("TARGET_FILE", "path/to/target/file")
 
 # Validate environment variables
 if not GITLAB_URL:
-    logger.error(f"GITLAB_URL: {GITLAB_URL} is not set.")
+    logger.error("GITLAB_URL is not set.")
     exit(1)
 logger.info(f"GITLAB_URL: {GITLAB_URL}")
 
@@ -66,8 +67,9 @@ except Exception as e:
 
 # Lists to track progress
 failed_repos = []
-no_changes_repos = []
-successful_pushes = 0
+no_changes_pushed = []
+successful_pushes = []
+commit_urls = []
 
 # Loop through repositories
 for repo_url in repositories:
@@ -105,33 +107,29 @@ for repo_url in repositories:
                 logger.info(f"Updating file: {TARGET_FILE}")
                 with open(target_file_path, "w") as target_file:
                     target_file.write(new_content)
+                logger.info("Staging changes.")
+                repo.git.add(TARGET_FILE)
+                logger.info(f"Committing changes with message: '{commit_message}'.")
+                commit = repo.git.commit(m=commit_message)
+                commit_urls.append(f"{repo_url}/-/commit/{commit}")
             else:
-                logger.info(f"No changes detected in {TARGET_FILE}, skipping update.")
-                no_changes_repos.append({"repo_url": repo_url, "reason": "No changes made to target file."})
-                continue
+                logger.info(f"No changes detected in {TARGET_FILE}, pushing branch anyway.")
+                no_changes_pushed.append(repo_url)
+
+            # Push the branch to the remote repository
+            try:
+                logger.info(f"Pushing branch '{branch_name}' to remote repository.")
+                repo.git.push("--set-upstream", "origin", branch_name)
+                successful_pushes.append(repo_url)
+                logger.info(f"Branch '{branch_name}' pushed successfully for {repo_url}.")
+            except Exception as push_error:
+                logger.error(f"Failed to push branch '{branch_name}' for {repo_url}: {push_error}")
+                failed_repos.append(repo_url)
         else:
             raise FileNotFoundError(f"{TARGET_FILE} not found in {repo_url}")
-
-        # Commit and push changes
-        logger.info("Staging changes.")
-        repo.git.add(TARGET_FILE)
-        logger.info(f"Committing changes with message: '{commit_message}'.")
-        try:
-            repo.git.commit(m=commit_message)
-            logger.info("Pushing changes to remote repository.")
-            repo.git.push("--set-upstream", "origin", branch_name)
-            successful_pushes += 1
-            logger.info(f"Changes pushed successfully for {repo_url}.")
-        except Exception as push_error:
-            if "nothing to commit" in str(push_error):
-                no_changes_repos.append({"repo_url": repo_url, "reason": "No changes to commit."})
-                logger.warning(f"No changes to commit for repository: {repo_url}")
-            else:
-                raise push_error
     except Exception as e:
-        error_message = str(e)
-        failed_repos.append({"repo_url": repo_url, "error": error_message})
-        logger.error(f"Failed to process repository {repo_url}: {error_message}")
+        logger.error(f"Failed to process repository {repo_url}: {e}")
+        failed_repos.append(repo_url)
     finally:
         # Clean up
         if repo_dir and os.path.exists(repo_dir):
@@ -139,37 +137,29 @@ for repo_url in repositories:
             shutil.rmtree(repo_dir)
 
 # Generate summary report
-if failed_repos or no_changes_repos:
-    logger.info("\n--- Summary Report ---")
-    logger.info(f"Total Successful Pushes: {successful_pushes}")
-    logger.info(f"Total Failed Repositories: {len(failed_repos)}")
-    logger.info(f"Total Repositories with No Changes: {len(no_changes_repos)}")
+logger.info("\n--- Summary Report ---")
+logger.info(f"Total Successful Pushes: {len(successful_pushes)}")
+logger.info(f"Total Repositories with No Changes but Pushed: {len(no_changes_pushed)}")
+logger.info(f"Total Failed Repositories: {len(failed_repos)}")
 
-    if failed_repos:
-        logger.info("\n--- Failed Repositories ---")
-        for failed_repo in failed_repos:
-            logger.info(f"Repository: {failed_repo['repo_url']} | Error: {failed_repo['error']}")
-    if no_changes_repos:
-        logger.info("\n--- Repositories with No Changes ---")
-        for no_change_repo in no_changes_repos:
-            logger.info(f"Repository: {no_change_repo['repo_url']} | Reason: {no_change_repo['reason']}")
+if successful_pushes:
+    logger.info("\n--- Successful Repositories ---")
+    for repo in successful_pushes:
+        logger.info(f"Repository: {repo}")
 
-    # Optionally, write to a file
-    with open("summary_report.txt", "w") as report_file:
-        report_file.write(f"--- Summary Report ---\n")
-        report_file.write(f"Total Successful Pushes: {successful_pushes}\n")
-        report_file.write(f"Total Failed Repositories: {len(failed_repos)}\n")
-        report_file.write(f"Total Repositories with No Changes: {len(no_changes_repos)}\n\n")
+if no_changes_pushed:
+    logger.info("\n--- Repositories with No Changes but Pushed ---")
+    for repo in no_changes_pushed:
+        logger.info(f"Repository: {repo}")
 
-        if failed_repos:
-            report_file.write("--- Failed Repositories ---\n")
-            for failed_repo in failed_repos:
-                report_file.write(f"Repository: {failed_repo['repo_url']} | Error: {failed_repo['error']}\n")
-        if no_changes_repos:
-            report_file.write("\n--- Repositories with No Changes ---\n")
-            for no_change_repo in no_changes_repos:
-                report_file.write(f"Repository: {no_change_repo['repo_url']} | Reason: {no_change_repo['reason']}\n")
-else:
-    logger.info("All repositories processed successfully.")
+if failed_repos:
+    logger.info("\n--- Failed Repositories ---")
+    for repo in failed_repos:
+        logger.info(f"Repository: {repo}")
+
+if commit_urls:
+    logger.info("\n--- Commit URLs ---")
+    for url in commit_urls:
+        logger.info(url)
 
 logger.info("Processing completed for all repositories.")
