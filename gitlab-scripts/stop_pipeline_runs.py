@@ -1,14 +1,3 @@
-"""
-
-__author__ = "Jian Hui Lee"
-example usage:
-
-make run SCRIPT=stop_pipeline_runs.py ARGS="--all"
-make run SCRIPT=stop_pipeline_runs.py ARGS="-b 1"
-make run SCRIPT=stop_pipeline_runs.py ARGS="-a 1"
-"""
-
-
 import gitlab
 import os
 import logging
@@ -113,18 +102,14 @@ def stop_pipelines(gl, after, before, all_pipelines, branch_name_filter, reposit
     # Convert 'after' and 'before' to ISO format
     if after:
         try:
-            # Convert relative days to ISO if not already in ISO format
             after_iso = (datetime.utcnow() - timedelta(days=int(after))).isoformat()
         except ValueError:
-            # Assume it's already an ISO date string
             after_iso = datetime.fromisoformat(after).isoformat()
 
     if before:
         try:
-            # Convert relative days to ISO if not already in ISO format
             before_iso = (datetime.utcnow() - timedelta(days=int(before))).isoformat()
         except ValueError:
-            # Assume it's already an ISO date string
             before_iso = datetime.fromisoformat(before).isoformat()
 
     logger.info(f"Stopping pipelines created after: {after_iso}, before: {before_iso}")
@@ -137,9 +122,9 @@ def stop_pipelines(gl, after, before, all_pipelines, branch_name_filter, reposit
         try:
             project = gl.projects.get(repo_path)
 
-            # If --all flag is passed, do not use time filters
+            # If --all flag is passed, do not use time filters and fetch all pipelines
             if all_pipelines:
-                pipelines = project.pipelines.list(as_list=True)
+                pipelines = project.pipelines.list(all=True)  # 'all=True' automatically handles pagination
             else:
                 pipelines = project.pipelines.list(
                     updated_after=after_iso,
