@@ -1,3 +1,6 @@
+""" 
+make run SCRIPT=run_pipelines.py ARGS="-b feature/batch_update_config_yml"
+"""
 # Modified Script
 import gitlab
 import os
