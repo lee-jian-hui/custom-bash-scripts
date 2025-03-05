@@ -1,0 +1,6 @@
+--index-url https://artifacts.dell.com/artifactory/api/pypi/python/simple
+--trusted-host artifacts.dell.com
+
+
+hvac
+python-dotenv

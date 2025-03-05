@@ -78,20 +78,19 @@ def initialize_gitlab_client(url, token):
 def monitor_repository(repo_path, gl):
     """
     Monitor the latest pipeline for the given repository.
-    Retry failed or canceled jobs up to THRESHOLD times.
+    Retry failed or canceled jobs (tracked by job name) up to THRESHOLD times.
     """
-    failure_count = 0
-    retries = 0
     success = False
     failed_pipelines = []
-    job_failures = {}  # Tracks failure counts per job
-    repo_name = repo_path.split("/")[-1]
+    # Track failures by job name
+    job_failures_by_name = {}  # e.g., {"upload-model": <failure_count>}
+    retries = 0
 
     logger.info(f"Starting monitoring for repository: {repo_path}")
 
     try:
         project = gl.projects.get(repo_path)
-        # Fetch the latest pipeline
+        # Get the latest pipeline
         pipelines = project.pipelines.list(per_page=1, order_by='id', sort='desc', get_all=False)
         if not pipelines:
             logger.warning(f"No pipelines found for repository {repo_path}. Marking as failed.")
@@ -107,8 +106,8 @@ def monitor_repository(repo_path, gl):
         logger.info(f"Latest pipeline for {repo_path} is ID {pipeline.id}")
 
         while True:
-            pipeline.refresh()  # Refresh pipeline status
-            jobs = pipeline.jobs.list(all=True)  # List all jobs in the pipeline
+            pipeline.refresh()  # Refresh the pipeline status
+            jobs = pipeline.jobs.list(all=True)  # Partial job objects
 
             if pipeline.status == "success":
                 logger.info(f"Pipeline {pipeline.id} for repository {repo_path} succeeded!")
@@ -119,57 +118,63 @@ def monitor_repository(repo_path, gl):
 
             for partial_job in jobs:
                 try:
-                    # Retrieve the full job object to access all methods and attributes
+                    # Retrieve the full job object
                     full_job = project.jobs.get(partial_job.id)
                 except Exception as e:
                     logger.error(f"Could not retrieve full job object for job {partial_job.id}: {e}")
                     failed_any_job = True
                     break
 
-                full_job.refresh()  # Refresh job status
+                full_job.refresh()
 
                 if full_job.status in ["failed", "canceled"]:
-                    job_failures.setdefault(full_job.id, 0)
-
-                    if job_failures[full_job.id] < THRESHOLD:
-                        job_failures[full_job.id] += 1
+                    # Increment counter by job name
+                    job_name = full_job.name
+                    job_failures_by_name.setdefault(job_name, 0)
+                    
+                    if job_failures_by_name[job_name] < THRESHOLD:
+                        job_failures_by_name[job_name] += 1
                         retries += 1
+
                         logger.error(
-                            f"Job '{full_job.name}' (ID: {full_job.id}) for pipeline {pipeline.id} "
-                            f"failed {job_failures[full_job.id]} time(s). Retrying..."
+                            f"Job '{job_name}' for pipeline {pipeline.id} failed "
+                            f"{job_failures_by_name[job_name]} time(s). Retrying..."
                         )
                         try:
                             full_job.retry()
-                            sleep(5)  # Wait before checking the status again
+                            sleep(5)
                         except Exception as e:
-                            logger.error(f"Failed to retry job {full_job.id}: {e}")
+                            logger.error(f"Failed to retry job '{job_name}': {e}")
                             failed_any_job = True
                             break
                     else:
                         logger.error(
-                            f"Job '{full_job.name}' (ID: {full_job.id}) failed more than {THRESHOLD} times. "
-                            "Marking pipeline as failed."
+                            f"Job '{job_name}' for pipeline {pipeline.id} failed more than "
+                            f"{THRESHOLD} times. Marking pipeline as failed."
                         )
                         failed_pipelines.append(
-                            f"Pipeline {pipeline.id} failed due to job '{full_job.name}' "
+                            f"Pipeline {pipeline.id} failed due to job '{job_name}' "
                             f"exceeding {THRESHOLD} failures."
                         )
                         failed_any_job = True
-                        break
+                        break  # Stop checking other jobs; pipeline is effectively failed
 
             if failed_any_job:
-                break  # Exit the monitoring loop for this repository
+                # We either hit a threshold or an unrecoverable error
+                break
 
-            # If pipeline is still running or pending, wait before the next check
+            # If pipeline is running/pending/canceled/failed but we haven't exceeded threshold
             if pipeline.status not in ["success", "failed", "canceled"]:
-                logger.info(f"Pipeline {pipeline.id} status is {pipeline.status}. Checking again in 5 seconds...")
+                logger.info(
+                    f"Pipeline {pipeline.id} status is {pipeline.status}. Checking again in 5 seconds..."
+                )
                 sleep(5)
             else:
-                # If the pipeline has failed or been canceled but no job exceeded the threshold,
-                # continue monitoring in case there are jobs to retry
+                # If pipeline is 'failed' or 'canceled' but no job exceeded threshold,
+                # we continue checking in case there's a new job or a previously failed job
                 pass
 
-        # Prepare the result based on the final status
+        # Prepare the result for the summary
         if success:
             return {
                 "repo": repo_path,
@@ -194,7 +199,7 @@ def monitor_repository(repo_path, gl):
             "success": False,
             "failed_pipelines": [f"Exception: {str(e)}"],
             "last_pipeline_url": None,
-            "retries": retries
+            "retries": 0
         }
 
 # Thread class for repository monitoring

@@ -1,0 +1,73 @@
+ APPSCAN
+
+ APPSCAN/
+
+ ARTIFACTORY
+
+ AWX
+
+ ActionServerSonarQubeSecrets
+
+ BLACKDUCK
+
+ CHECKMARX
+
+ DATABASE/
+
+ DELL_PROXY/
+
+ DEV
+
+ Demo_testing
+
+ FORTIFY
+
+ HARBOR
+
+ HARBOR/
+
+ LDAP
+
+ LDAP/
+
+ LLM_KOB_DEV
+
+ OLAM
+
+ PCF/
+
+ PKS/
+
+ SAUCELABS
+
+ SERVICE_ACCOUNT/
+
+ SNOW/
+
+ SONARQUBE
+
+ SSP_Microservices
+
+ TROUX
+
+ UAT
+
+ VM/
+
+ aiops_episode_pipeline_configuration
+
+ cmdb
+
+ database_team
+
+ dbaas
+
+ e2e
+
+ olam_testing_1
+
+ olam_testing_2
+
+ planview
+
+ snow
